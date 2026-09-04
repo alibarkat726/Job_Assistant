@@ -54,9 +54,14 @@ job_assitant/
 │   │   ├── repository.py
 │   │   ├── services.py
 │   │   └── routes.py
+│   ├── learning/                   # Module 4: Daily Learning Log & Triage Agent
+│   │   ├── schemas.py
+│   │   ├── repository.py
+│   │   ├── triage_agent.py         # ITriageAgent interface & heuristic classifier
+│   │   ├── services.py             # Orchestrates Agent and Human-in-the-Loop approvals
+│   │   └── routes.py
 │   └── core_schema/
-│       └── models.py               # Domain models (CV, WorkHistory, EducationEntry, Skill, Project, etc.)
-├── alembic/                        # Versioned DB migrations with Postgres RLS FORCE policies
+│       └── models.py               # Domain models (CV, Skill, Project, LearningEntry, etc.)
 │   ├── env.py
 │   └── versions/
 │       ├── 001_initial_multitenant_schema.py
@@ -127,6 +132,24 @@ Module 3 builds the canonical user profile foundation required for future Matchi
 - **Tenant-Safe Many-to-Many**: Projects and Skills are linked via the `project_skills` association table.
   - **RLS Forced**: The join table includes `user_id` and enforces strict Row Level Security.
   - **Cross-Tenant Attack Guard**: The API actively validates that both the project and the skill belong to the authenticated user before allowing attachment, preventing ID-guessing enumeration attacks.
+
+---
+
+## 🧠 Module 4: Learning Triage Agent (Daily Learning Log)
+
+Module 4 allows users to log their daily learning activities and utilizes an AI Triage Agent to classify them and propose updates to the canonical skill profile (Module 3). It strictly follows a "Human-in-the-Loop" architecture.
+
+### 1. Human-in-the-Loop Approval Flow
+- **Triage Proposals**: The `TriageAgent` evaluates learning entries and generates a `LearningProposal`. Instead of blindly writing to the `skills` table, the agent stages the proposals (with proposed actions `create_new` or `reinforce_existing`).
+- **Partial Approvals**: Users review pending proposals via `/api/v1/learning/proposals/pending` and can explicitly approve individual skill proposals while rejecting others within the same entry.
+- **Skill Mutation Guard**: The agent *never* mutates the canonical profile directly. Only explicit human approval calls `SkillsService.upsert_skill`.
+
+### 2. Confidence & Decay Semantics (Graph Engine)
+To prevent the "stale skills" problem in the Matching Engine, skill proficiency follows these explicit semantics:
+- **Agent Confidence vs. Proficiency**: The Triage Agent's confidence (`high`, `medium`, `low`) is decoupled from the user's canonical `proficiency`. Agent confidence represents *certainty in the extraction*, whereas proficiency represents *actual demonstrated ability*.
+- **Creation Floor**: Approved new skills (`create_new`) *always* start at a proficiency of `1` (on the 1-5 scale), ignoring agent confidence.
+- **Reinforcement Increment**: When an existing skill is reinforced (`reinforce_existing`) via learning, its canonical proficiency is incremented by `+1` (capped at 5) and its `updated_at` (recency) timestamp is refreshed. (Note: These rules generalize across reinforcement sources; if projects eventually reinforce skills, they should share this logic).
+- **Lazy Decay (Designed, Not Scheduled)**: To avoid silent cron-job failures, decay is designed to be *lazy computed at read-time* (e.g. `effective_proficiency = stored_proficiency - floor(months_since_update / 6)`). The proficiency cannot decay below a floor of `1`, since past reinforcement implies baseline capability.
 
 ---
 
