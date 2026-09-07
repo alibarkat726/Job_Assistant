@@ -274,26 +274,88 @@ class ProposedSkillItem(Base, TimestampMixin):
     proposal: Mapped["LearningProposal"] = relationship("LearningProposal", back_populates="proposed_skills")
 
 
-class JobCache(Base, TimestampMixin):
-    __tablename__ = "jobs_cache"
+class JobApplication(Base, TimestampMixin):
+    """
+    User's job application record. The user manually pastes a job description;
+    the system parses it, scores it against their skills, and produces a tailored CV.
+    This is NOT a shared cache — it belongs exclusively to one user (tenant-scoped).
+    """
+    __tablename__ = "job_applications"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, default=uuid.uuid4, index=True
-    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     job_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    company: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    jd_raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    # 'draft' -> 'tailored' -> 'applied'
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)
+    # 'pending_parse', 'parsed', 'needs_manual_review'
+    parse_status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending_parse")
+
+    requirements: Mapped[List["JDRequirement"]] = relationship(
+        "JDRequirement", back_populates="job_application", cascade="all, delete-orphan"
+    )
+    tailored_cv: Mapped[Optional["TailoredCV"]] = relationship(
+        "TailoredCV", back_populates="job_application", cascade="all, delete-orphan", uselist=False
+    )
 
 
-class Application(Base, TimestampMixin):
-    __tablename__ = "applications"
+class JDRequirement(Base, TimestampMixin):
+    """
+    A single extracted requirement from a job description.
+    Normalized child table (not a JSON blob) — consistent with Module 2/4 pattern.
+    """
+    __tablename__ = "jd_requirements"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, default=uuid.uuid4, index=True
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
+    job_application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("job_applications.id", ondelete="CASCADE"), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    job_id: Mapped[Optional[uuid.UUID]] = mapped_column(nullable=True, index=True)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="applied")
+    skill_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Normalized for matching against skills.name_slug
+    skill_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    seniority: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    job_application: Mapped["JobApplication"] = relationship(
+        "JobApplication", back_populates="requirements"
+    )
+
+
+class TailoredCV(Base, TimestampMixin):
+    """
+    A tailored CV draft produced for a specific job application.
+    Hard constraint: only reorders/reweights existing CV data — never invents facts.
+    Underlying fields (company names, dates, project URLs) from canonical CV are unchanged.
+    """
+    __tablename__ = "tailored_cvs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
+    job_application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("job_applications.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_cv_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("cvs.id", ondelete="SET NULL"), nullable=True
+    )
+    # JSON string of tailored CV content (reordered/reweighted bullets)
+    tailored_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Summary of what changed vs canonical CV
+    diff_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 'draft', 'finalized'
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
+    # JSON list of selected project UUIDs ranked by JD relevance
+    selected_project_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    job_application: Mapped["JobApplication"] = relationship(
+        "JobApplication", back_populates="tailored_cv"
+    )
+

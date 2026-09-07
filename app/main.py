@@ -10,6 +10,7 @@ from app.cv.routes import router as cv_router
 from app.skills.routes import router as skills_router
 from app.projects.routes import router as projects_router
 from app.learning.routes import router as learning_router
+from app.tailoring.routes import router as tailoring_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -44,6 +45,7 @@ app.include_router(cv_router)
 app.include_router(skills_router)
 app.include_router(projects_router)
 app.include_router(learning_router)
+app.include_router(tailoring_router)
 
 
 @app.get("/health", tags=["System"])
