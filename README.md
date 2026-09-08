@@ -201,6 +201,29 @@ Module 5 allows users to paste a job description, receive a structured analysis 
 
 ---
 
+## 🎯 Module 6: Interview Prep Agent
+
+Module 6 builds directly on the Job Applications data to generate highly tailored interview preparation materials. Rather than generic questions, the prep agent grounds its output strictly in the specific JD requirements and the user's matched skills and projects.
+
+### 1. Grounded Question Generation
+- **Endpoint**: `POST /api/v1/applications/{id}/interview-prep`
+- **Agent Output (`IInterviewPrepAgent`)**: Given the parsed JD requirements, matched skills, and top ranked projects from Module 5, the agent generates a `StructuredInterviewPrepSet`.
+- **Categories**:
+  - `technical`: Formulated based on matched skills (e.g. "How have you applied React in your past work?") or missing required skills ("The role requires Kubernetes but it's not on your CV, how would you ramp up?").
+  - `project`: Draws strictly from the user's shortlisted projects (e.g. "Walk me through the architecture of your ShopLedger project.").
+  - `behavioral`: Standard questions tailored to the seniority level parsed from the JD.
+- **Traceability (`rationale`)**: Every generated question includes a `rationale` field explaining exactly *why* it was asked, referencing the specific JD line or CV data point. This ensures no hallucinated/generic filler.
+
+### 2. Suggested Answer Framing
+- **Prompt, not a script**: The agent provides a `suggested_answer_outline` which acts as a starting point or framework (e.g. "Use the STAR method to describe how you overcame..."). It intentionally avoids writing a full scripted answer to prevent rote memorization and encourage genuine preparation.
+
+### 3. Review and Practice Loop
+- **Endpoint**: `PUT /api/v1/applications/{id}/interview-prep/questions/{question_id}`
+- Users can draft their own answers in the `user_notes` field (which is HTML-sanitized) and toggle `is_practiced`.
+- **Regeneration**: Calling `POST /api/v1/applications/{id}/interview-prep` again deletes the existing set (and notes) and regenerates a fresh set of questions.
+
+---
+
 ## 🔒 Security Design & Highlights
 
 

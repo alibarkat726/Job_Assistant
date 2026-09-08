@@ -301,6 +301,9 @@ class JobApplication(Base, TimestampMixin):
     tailored_cv: Mapped[Optional["TailoredCV"]] = relationship(
         "TailoredCV", back_populates="job_application", cascade="all, delete-orphan", uselist=False
     )
+    interview_prep_set: Mapped[Optional["InterviewPrepSet"]] = relationship(
+        "InterviewPrepSet", back_populates="job_application", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class JDRequirement(Base, TimestampMixin):
@@ -348,14 +351,68 @@ class TailoredCV(Base, TimestampMixin):
     )
     # JSON string of tailored CV content (reordered/reweighted bullets)
     tailored_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # Summary of what changed vs canonical CV
+    # Human-readable summary of what was changed
     diff_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # 'draft', 'finalized'
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
-    # JSON list of selected project UUIDs ranked by JD relevance
-    selected_project_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Array of strings storing project IDs
+    selected_project_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
     job_application: Mapped["JobApplication"] = relationship(
         "JobApplication", back_populates="tailored_cv"
     )
+    source_cv: Mapped["CV"] = relationship(
+        "CV", foreign_keys=[source_cv_id]
+    )
 
+
+class InterviewPrepSet(Base, TimestampMixin):
+    """
+    A generated set of interview questions for a specific job application.
+    """
+    __tablename__ = "interview_prep_sets"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
+    job_application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("job_applications.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # 'pending_generation', 'generated', 'needs_manual_review'
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending_generation")
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    job_application: Mapped["JobApplication"] = relationship(
+        "JobApplication", back_populates="interview_prep_set"
+    )
+    questions: Mapped[List["InterviewQuestion"]] = relationship(
+        "InterviewQuestion", back_populates="prep_set", cascade="all, delete-orphan", order_by="InterviewQuestion.ordering"
+    )
+
+
+class InterviewQuestion(Base, TimestampMixin):
+    """
+    A specific interview question within a prep set.
+    """
+    __tablename__ = "interview_questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
+    prep_set_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("interview_prep_sets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # 'technical', 'project', 'behavioral'
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_answer_outline: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_practiced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ordering: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    prep_set: Mapped["InterviewPrepSet"] = relationship(
+        "InterviewPrepSet", back_populates="questions"
+    )
