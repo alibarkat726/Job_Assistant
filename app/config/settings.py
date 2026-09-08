@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     MAX_LOGIN_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
 
+    # File Storage & CV Intake
+    MAX_UPLOAD_SIZE_MB: int = 10
+    STORAGE_DIR: str = "./storage/cvs"
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "gemini-2.5-flash"
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

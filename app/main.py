@@ -6,6 +6,9 @@ from app.shared.middleware.error_handler import register_exception_handlers
 from app.shared.middleware.security_headers import SecurityHeadersMiddleware
 from app.shared.middleware.rate_limiter import limiter, _rate_limit_exceeded_handler
 from app.auth.routes import router as auth_router
+from app.cv.routes import router as cv_router
+from app.skills.routes import router as skills_router
+from app.projects.routes import router as projects_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -36,6 +39,9 @@ register_exception_handlers(app)
 
 # 4. Include Routers
 app.include_router(auth_router)
+app.include_router(cv_router)
+app.include_router(skills_router)
+app.include_router(projects_router)
 
 
 @app.get("/health", tags=["System"])
