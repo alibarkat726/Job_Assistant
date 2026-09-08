@@ -298,11 +298,68 @@ class JobApplication(Base, TimestampMixin):
     requirements: Mapped[List["JDRequirement"]] = relationship(
         "JDRequirement", back_populates="job_application", cascade="all, delete-orphan"
     )
+    skill_matches: Mapped[List["ApplicationSkillMatch"]] = relationship(
+        "ApplicationSkillMatch", back_populates="job_application", cascade="all, delete-orphan"
+    )
     tailored_cv: Mapped[Optional["TailoredCV"]] = relationship(
         "TailoredCV", back_populates="job_application", cascade="all, delete-orphan", uselist=False
     )
     interview_prep_set: Mapped[Optional["InterviewPrepSet"]] = relationship(
         "InterviewPrepSet", back_populates="job_application", cascade="all, delete-orphan", uselist=False
+    )
+    cover_letter: Mapped[Optional["CoverLetter"]] = relationship(
+        "CoverLetter", back_populates="job_application", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class CoverLetter(Base, TimestampMixin):
+    """
+    A tailored cover letter draft/final version produced for a specific job application.
+    """
+    __tablename__ = "cover_letters"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
+    job_application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("job_applications.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    tone: Mapped[str] = mapped_column(String(50), nullable=False, default="standard")
+    length: Mapped[str] = mapped_column(String(50), nullable=False, default="standard")
+    # 'draft', 'finalized'
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
+    
+    # Store unverified claims flagged by the grounding check as JSON string
+    unverified_claims: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    job_application: Mapped["JobApplication"] = relationship(
+        "JobApplication", back_populates="cover_letter"
+    )
+
+
+class ApplicationSkillMatch(Base, TimestampMixin):
+    """
+    Transient-ish matching output persisted for analytics module querying.
+    """
+    __tablename__ = "application_skill_matches"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4, index=True)
+    job_application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("job_applications.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    jd_skill_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    jd_skill_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 'matched', 'partial', 'missing'
+    match_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    job_application: Mapped["JobApplication"] = relationship(
+        "JobApplication", back_populates="skill_matches"
     )
 
 

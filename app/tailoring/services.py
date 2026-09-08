@@ -17,6 +17,7 @@ from app.tailoring.schemas import (
     TailoredCVEditRequest,
     TailoredCVResponse,
     MatchingReport,
+    StructuredJDRequirement,
 )
 from app.cv.repository import CVRepository
 from app.skills.repository import SkillRepository
@@ -240,17 +241,46 @@ class TailoringService:
         """Run JD parser and insert normalized JDRequirement rows."""
         try:
             structured_jd = await self.jd_parser.parse(app.jd_raw_text)
+            jd_reqs_for_match = []
+            
             for req in structured_jd.required_skills:
                 from app.skills.services import normalize_skill_name
+                skill_slug = normalize_skill_name(req.skill_name)
                 item = JDRequirement(
                     job_application_id=app.id,
                     user_id=app.user_id,
                     skill_name=req.skill_name,
-                    skill_slug=normalize_skill_name(req.skill_name),
+                    skill_slug=skill_slug,
                     is_required=req.is_required,
                     seniority=req.seniority,
                 )
                 self.app_repo.db.add(item)
+                jd_reqs_for_match.append(
+                    StructuredJDRequirement(
+                        skill_name=item.skill_name,
+                        is_required=item.is_required,
+                        seniority=item.seniority
+                    )
+                )
+            
+            # Immediately run matching and persist results for analytics
+            if jd_reqs_for_match:
+                user_skills = await self.skill_repo.find_all()
+                from app.tailoring.matching import build_matching_report
+                match_results = build_matching_report(jd_reqs_for_match, user_skills, [])
+                
+                from app.core_schema.models import ApplicationSkillMatch
+                for match in match_results.skill_matches:
+                    match_record = ApplicationSkillMatch(
+                        job_application_id=app.id,
+                        user_id=app.user_id,
+                        jd_skill_name=match.jd_skill_name,
+                        jd_skill_slug=match.jd_skill_slug,
+                        match_status=match.match_status,
+                        is_required=match.is_required
+                    )
+                    self.app_repo.db.add(match_record)
+
             await self.app_repo.db.commit()
             app.parse_status = "parsed"
             await self.app_repo.update(app)
