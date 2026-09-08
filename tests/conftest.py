@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.pool import NullPool
 from sqlalchemy import text
 from app.config.settings import settings
+settings.ENVIRONMENT = "testing"
+from app.shared.middleware.rate_limiter import limiter
+limiter.enabled = False
+
 from app.shared.db.session import get_db
 from app.users.repository import UserRepository
 from app.auth.schemas import UserRegister
@@ -32,7 +36,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, tailored_cvs, interview_prep_sets, interview_questions CASCADE;"
+                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, application_skill_matches, tailored_cvs, interview_prep_sets, interview_questions, cover_letters CASCADE;"
             )
         )
 
@@ -42,7 +46,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, tailored_cvs, interview_prep_sets, interview_questions CASCADE;"
+                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, application_skill_matches, tailored_cvs, interview_prep_sets, interview_questions, cover_letters CASCADE;"
             )
         )
 

@@ -12,13 +12,15 @@ from app.projects.routes import router as projects_router
 from app.learning.routes import router as learning_router
 from app.tailoring.routes import router as tailoring_router
 from app.interview_prep.routes import router as interview_prep_router
+from app.dashboard.routes import router as dashboard_router
+from app.cover_letters.routes import router as cover_letter_router
 
 app = FastAPI(
     title=settings.APP_NAME,
     description="Job-Finder AI Agent Platform - Auth & Multi-Tenant Foundation",
     version="1.0.0",
-    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
-    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    docs_url="/docs" if settings.ENVIRONMENT in ("development", "testing") else None,
+    redoc_url="/redoc" if settings.ENVIRONMENT in ("development", "testing") else None,
 )
 
 # Attach Slowapi Limiter state
@@ -48,6 +50,8 @@ app.include_router(projects_router)
 app.include_router(learning_router)
 app.include_router(tailoring_router)
 app.include_router(interview_prep_router)
+app.include_router(dashboard_router)
+app.include_router(cover_letter_router)
 
 
 @app.get("/health", tags=["System"])

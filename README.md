@@ -222,6 +222,41 @@ Module 6 builds directly on the Job Applications data to generate highly tailore
 - Users can draft their own answers in the `user_notes` field (which is HTML-sanitized) and toggle `is_practiced`.
 - **Regeneration**: Calling `POST /api/v1/applications/{id}/interview-prep` again deletes the existing set (and notes) and regenerates a fresh set of questions.
 
+## 📊 Module 7: Dashboard & Skill Gap Analytics
+
+This module serves as the read-only aggregation layer for users to track their job search progress and analyze their skill gaps. It runs fast, query-driven analytics on the structured data produced by prior modules, with zero LLM/Agent overhead.
+
+### 1. Application Tracking
+- **Endpoints**: 
+  - `GET /api/v1/dashboard/applications` (List view with matched/required skill counts)
+  - `GET /api/v1/dashboard/applications/{id}` (Deeply aggregated detail view including the parsed JD, tailored CV, skill matches, and interview prep in one request)
+
+### 2. Skill Gap Analytics
+- **Endpoint**: `GET /api/v1/dashboard/analytics/skill-gaps`
+- Aggregates all `application_skill_matches` across the user's applications to find:
+  - **Most Frequently Missing Skills**: Shows the user exactly what the market is asking for that they do not possess.
+  - **Most Frequently Matched Skills**: Validates which of the user's existing skills are most in-demand.
+  - **Learning Nudge**: A derived (non-LLM) suggestion prompting the user to focus their Module 4 Daily Learning on their most frequently missing skill.
+
+---
+
+## ✉️ Module 8: Cover Letter Generation Agent
+
+Module 8 builds on the job application data (JD requirements, matched skills, and ranked projects) and the user's canonical CV to generate tailored, factually grounded cover letter drafts.
+
+### 1. Grounded Generation & Anti-Hallucination Guardrails
+- **Endpoint**: `POST /api/v1/cover-letters`
+- **Agent Output (`ICoverLetterAgent`)**: Formulates professional cover letters adhering to specified `tone` (e.g. `professional`, `conversational`, `enthusiastic`) and `length` (`short`, `medium`, `long`).
+- **Grounded Verification (`verify_grounded`)**: Validates every draft against an allowed set of facts (derived strictly from the candidate's canonical CV, shortlisted projects, and JD skills). If ungrounded metrics or unsupported claims are detected, it falls back to a strictly grounded deterministic template.
+
+### 2. Editing, Status Tracking & Multi-Format Export
+- **Endpoints**:
+  - `GET /api/v1/cover-letters/{id}`: Retrieve cover letter by ID.
+  - `GET /api/v1/cover-letters/application/{job_application_id}`: List all drafts generated for a specific job application.
+  - `PUT /api/v1/cover-letters/{id}`: Edit draft content.
+  - `POST /api/v1/cover-letters/{id}/finalize`: Mark status as `final`.
+  - `GET /api/v1/cover-letters/{id}/export?format={txt|md|html}`: Export in plain text, markdown, or styled HTML.
+
 ---
 
 ## 🔒 Security Design & Highlights
