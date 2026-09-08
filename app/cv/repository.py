@@ -43,6 +43,23 @@ class CVRepository(BaseTenantRepository[CV]):
             return draft
         return await self.get_active_canonical_cv()
 
+    async def get_cv_with_children(self, cv_id: uuid.UUID) -> Optional[CV]:
+        """Fetch a CV with eagerly loaded work histories for the tailoring agent."""
+        from sqlalchemy.orm import selectinload
+        await self._set_rls_context()
+        stmt = (
+            select(CV)
+            .filter(CV.id == cv_id, CV.user_id == self.tenant_id)
+            .options(
+                selectinload(CV.work_histories),
+                selectinload(CV.education_entries),
+                selectinload(CV.skills),
+            )
+            .execution_options(populate_existing=True)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def save_cv_with_children(
         self,
         cv: CV,

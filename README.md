@@ -54,8 +54,22 @@ job_assitant/
 │   │   ├── repository.py
 │   │   ├── services.py
 │   │   └── routes.py
+│   ├── learning/                   # Module 4: Daily Learning Log & Triage Agent
+│   │   ├── schemas.py
+│   │   ├── repository.py
+│   │   ├── triage_agent.py         # ITriageAgent interface & heuristic classifier
+│   │   ├── services.py             # Orchestrates Agent and Human-in-the-Loop approvals
+│   │   └── routes.py
+│   ├── tailoring/                  # Module 5: Job Applications & CV Tailoring
+│   │   ├── schemas.py
+│   │   ├── repository.py
+│   │   ├── jd_parser.py            # IJDParser interface & HeuristicJDParser
+│   │   ├── matching.py             # Pure slug-overlap scoring engine (no LLM)
+│   │   ├── tailoring_agent.py      # ITailoringAgent interface & HeuristicTailoringAgent
+│   │   ├── services.py             # Orchestrates JD parse → match → tailor → finalize
+│   │   └── routes.py
 │   └── core_schema/
-│       └── models.py               # Domain models (CV, WorkHistory, EducationEntry, Skill, Project, etc.)
+│       └── models.py               # Domain models (CV, Skill, Project, LearningEntry, JobApplication, etc.)
 ├── alembic/                        # Versioned DB migrations with Postgres RLS FORCE policies
 │   ├── env.py
 │   └── versions/
@@ -130,7 +144,65 @@ Module 3 builds the canonical user profile foundation required for future Matchi
 
 ---
 
+## 🧠 Module 4: Learning Triage Agent (Daily Learning Log)
+
+Module 4 allows users to log their daily learning activities and utilizes an AI Triage Agent to classify them and propose updates to the canonical skill profile (Module 3). It strictly follows a "Human-in-the-Loop" architecture.
+
+### 1. Human-in-the-Loop Approval Flow
+- **Triage Proposals**: The `TriageAgent` evaluates learning entries and generates a `LearningProposal`. Instead of blindly writing to the `skills` table, the agent stages the proposals (with proposed actions `create_new` or `reinforce_existing`).
+- **Partial Approvals**: Users review pending proposals via `/api/v1/learning/proposals/pending` and can explicitly approve individual skill proposals while rejecting others within the same entry.
+- **Skill Mutation Guard**: The agent *never* mutates the canonical profile directly. Only explicit human approval calls `SkillsService.upsert_skill`.
+
+### 2. Confidence & Decay Semantics (Graph Engine)
+To prevent the "stale skills" problem in the Matching Engine, skill proficiency follows these explicit semantics:
+- **Agent Confidence vs. Proficiency**: The Triage Agent's confidence (`high`, `medium`, `low`) is decoupled from the user's canonical `proficiency`. Agent confidence represents *certainty in the extraction*, whereas proficiency represents *actual demonstrated ability*.
+- **Creation Floor**: Approved new skills (`create_new`) *always* start at a proficiency of `1` (on the 1-5 scale), ignoring agent confidence.
+- **Reinforcement Increment**: When an existing skill is reinforced (`reinforce_existing`) via learning, its canonical proficiency is incremented by `+1` (capped at 5) and its `updated_at` (recency) timestamp is refreshed. (Note: These rules generalize across reinforcement sources; if projects eventually reinforce skills, they should share this logic).
+- **Lazy Decay (Designed, Not Scheduled)**: To avoid silent cron-job failures, decay is designed to be *lazy computed at read-time* (e.g. `effective_proficiency = stored_proficiency - floor(months_since_update / 6)`). The proficiency cannot decay below a floor of `1`, since past reinforcement implies baseline capability.
+
+---
+
+## 🎯 Module 5: Job Applications & CV Tailoring
+
+Module 5 allows users to paste a job description, receive a structured analysis against their skill graph and portfolio, and generate a tailored CV draft — all without any automated job scraping or third-party submissions.
+
+### 1. JD Intake & Parsing
+- **Endpoint**: `POST /api/v1/applications` — user pastes the raw JD text (title, company optional, source URL optional).
+- **JD Parser**: Runs `HeuristicJDParser` (same interface-driven pattern as `ICVParser` and `ITriageAgent`) to extract required skills/technologies, seniority level, and key responsibilities.
+- **Normalized Child Table**: Extracted requirements are stored as rows in `jd_requirements` (not a JSON blob), consistent with Module 2's pattern. Each row has `skill_name`, `skill_slug` (normalized for matching), `is_required`, and `seniority`.
+- **Validation Failure**: On parser error, the application is marked `needs_manual_review` rather than crashing.
+
+### 2. Matching Engine (Slug-Overlap Scoring)
+- **Endpoint**: `GET /api/v1/applications/{id}/match`
+- **Strategy**: Pure deterministic slug-overlap scoring — no LLM required. Each JD requirement's `skill_slug` is compared against the user's canonical `skills.name_slug` using the same `normalize_skill_name` function from Module 3.
+- **Result Tiers**:
+  - `matched` — exact slug match found in user's skill graph
+  - `partial` — the JD slug contains or is contained by a user skill slug (e.g. user has `node.js`, JD asks for `node`)
+  - `missing` — no match found
+- **Overall Score**: Based on required skills only (nice-to-have misses do not penalize the score).
+- **Project Ranking**: Projects are ranked by how many of their attached skills match the JD's requirements, using the Module 3 `project_skills` many-to-many relationship.
+- **Future Upgrade Path**: Semantic/embedding-based matching (e.g. `Backend` matching `FastAPI`) is a documented future upgrade that can be layered without changing this engine's interface.
+
+### 3. Tailoring Agent & Immutable Facts Rule
+- **Endpoint**: `POST /api/v1/applications/{id}/tailor`
+- **Hard Constraint**: The agent may **only reorder, reweight, or rephrase** existing verified CV data. It must **never invent** experience, skills, metrics, company names, dates, or URLs not already present in the canonical CV.
+- **Enforcement**: Underlying facts (company, role, dates, project URLs) are copied verbatim from the canonical CV record. Only the **order** of work history entries changes — entries mentioning matched JD skills are surfaced first.
+- **Top Projects**: Up to 3 portfolio projects are selected based on their JD relevance score.
+
+### 4. Draft / Edit / Finalize Flow (mirrors Module 2)
+1. **Tailor**: Agent generates a draft linked to the job application.
+2. **Review/Edit**: User can update `tailored_content` or `selected_project_ids` via `PUT /api/v1/applications/{id}/tailor`.
+3. **Finalize**: `POST /api/v1/applications/{id}/tailor/finalize` — commits the tailored CV version permanently to the application record (providing a history of what was sent for each job).
+
+### 5. Manual "Applied" Status
+- The application status flows: `draft` → `tailored` → `applied`.
+- The `applied` status is **manually set by the user** via `PUT /api/v1/applications/{id}/status` once they have submitted externally.
+- This system **never auto-submits** to third-party job sites.
+
+---
+
 ## 🔒 Security Design & Highlights
+
 
 1. **Password Hashing**: Argon2id via `pwdlib` and `argon2-cffi`. Passwords are never logged or exposed in API response models.
 2. **Session Management (JWT + DB Refresh Tokens)**:
@@ -212,4 +284,10 @@ uv run pytest
 Tests include:
 - Auth & security unit tests (Argon2id, JWT, token rotation, account lockout)
 - CV Intake unit tests (file size validation, magic byte sniffing, HTML sanitization, local file storage path traversal protection, Intake Agent heuristic parsing)
-- Multi-Tenant Integration tests (User A vs User B tenant isolation at both application repository and PostgreSQL RLS layers, full upload → edit → finalize → download → delete workflow)
+- Skills/Projects unit tests (normalization, deduplication, project-skill many-to-many, cross-tenant guard)
+- Learning Triage unit tests (heuristic classification, approval mutations, partial approval, reinforcement increment)
+- JD Parser unit tests (skill extraction, seniority detection, required vs nice-to-have)
+- Matching Engine unit tests (matched/partial/missing scoring, project ranking, overall score calculation)
+- Tailoring Agent unit tests (verbatim facts invariant, reordering, top-3 project selection)
+- Multi-Tenant Integration tests (User A vs User B tenant isolation at both application repository and PostgreSQL RLS layers)
+- Full workflow integration: upload → edit → finalize → download → delete (CV), create → learn → propose → approve → canonical skill update (Learning), submit JD → parse → match → tailor → finalize (Tailoring)
