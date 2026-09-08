@@ -32,7 +32,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, tailored_cvs CASCADE;"
+                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, tailored_cvs, interview_prep_sets, interview_questions CASCADE;"
             )
         )
 
@@ -42,7 +42,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, tailored_cvs CASCADE;"
+                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, tailored_cvs, interview_prep_sets, interview_questions CASCADE;"
             )
         )
 
