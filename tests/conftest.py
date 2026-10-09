@@ -36,7 +36,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, application_skill_matches, tailored_cvs, interview_prep_sets, interview_questions, cover_letters CASCADE;"
+                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, application_skill_matches, tailored_cvs, interview_prep_sets, interview_questions, cover_letters, document_chunks, chat_sessions, chat_messages CASCADE;"
             )
         )
 
@@ -46,7 +46,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, application_skill_matches, tailored_cvs, interview_prep_sets, interview_questions, cover_letters CASCADE;"
+                "TRUNCATE users, refresh_tokens, cvs, skills, projects, project_skills, learning_entries, learning_proposals, proposed_skill_items, job_applications, jd_requirements, application_skill_matches, tailored_cvs, interview_prep_sets, interview_questions, cover_letters, document_chunks, chat_sessions, chat_messages CASCADE;"
             )
         )
 
@@ -56,12 +56,15 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     """Provides an AsyncClient for testing FastAPI endpoints with overridden db dependency."""
 
     async def _override_get_db():
-        try:
-            yield db_session
-            await db_session.commit()
-        except Exception:
-            await db_session.rollback()
-            raise
+        # Match production: each request gets a separate session and immutable
+        # tenant binding, including when a test exercises two different users.
+        async with TestAsyncSessionLocal() as request_session:
+            try:
+                yield request_session
+                await request_session.commit()
+            except Exception:
+                await request_session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = _override_get_db
     transport = ASGITransport(app=app)

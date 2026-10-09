@@ -1,4 +1,6 @@
 import pytest
+import io
+import zipfile
 from app.cv.security import validate_file_size, sniff_mime_type, sanitize_text
 from app.shared.middleware.error_handler import AppException
 
@@ -20,7 +22,11 @@ def test_mime_type_sniffing():
     assert sniff_mime_type(pdf_bytes, "fake_doc.docx") == "application/pdf"  # Sniffs true type despite wrong extension!
 
     # DOCX zip header
-    docx_bytes = b"PK\x03\x04 word/document.xml content"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "types")
+        archive.writestr("word/document.xml", "content")
+    docx_bytes = buffer.getvalue()
     assert sniff_mime_type(docx_bytes, "resume.docx") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
     # Plain text UTF-8
@@ -31,6 +37,19 @@ def test_mime_type_sniffing():
     with pytest.raises(AppException) as exc:
         sniff_mime_type(b"", "empty.txt")
     assert exc.value.code == "INVALID_FILE"
+
+
+def test_spoofed_or_oversized_docx_rejected(monkeypatch):
+    with pytest.raises(AppException):
+        sniff_mime_type(b"PK\x03\x04 word/document.xml content", "resume.docx")
+    from app.config.settings import settings
+    monkeypatch.setattr(settings, "MAX_DOCX_EXPANDED_BYTES", 1000)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "types")
+        archive.writestr("word/document.xml", "a" * 1001)
+    with pytest.raises(AppException, match="expanded size"):
+        sniff_mime_type(buffer.getvalue(), "resume.docx")
 
 
 def test_text_sanitization():

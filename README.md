@@ -349,3 +349,5 @@ Tests include:
 - Tailoring Agent unit tests (verbatim facts invariant, reordering, top-3 project selection)
 - Multi-Tenant Integration tests (User A vs User B tenant isolation at both application repository and PostgreSQL RLS layers)
 - Full workflow integration: upload → edit → finalize → download → delete (CV), create → learn → propose → approve → canonical skill update (Learning), submit JD → parse → match → tailor → finalize (Tailoring)
+
+Production RAG setup, migration prerequisites, worker operation, API changes, and remaining rollout checks are documented in [PRODUCTION_RAG.md](PRODUCTION_RAG.md).

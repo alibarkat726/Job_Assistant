@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.shared.db.base import Base
+from app.shared.db.tenant import bind_tenant
 
 ModelT = TypeVar("ModelT", bound=Base)
 
@@ -63,10 +64,7 @@ class BaseTenantRepository(BaseRepository[ModelT]):
     async def _set_rls_context(self) -> None:
         """Sets Postgres RLS session variable for defense-in-depth security."""
         # Use parameterized escape for raw PostgreSQL session variable setting
-        await self.db.execute(
-            text("SELECT set_config('app.current_user_id', :tenant_id, true)"),
-            {"tenant_id": str(self.tenant_id)},
-        )
+        await bind_tenant(self.db, self.tenant_id)
 
     async def get_by_id(self, id_val: Any) -> Optional[ModelT]:
         """Fetch record by ID scoped to current tenant."""

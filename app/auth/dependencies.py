@@ -1,6 +1,6 @@
 from typing import Type, TypeVar, Callable
 import uuid
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.shared.db.session import get_db
@@ -10,6 +10,7 @@ from app.shared.middleware.error_handler import AuthenticationError
 from app.users.models import User
 from app.users.repository import UserRepository
 from app.auth.services import AuthService
+from app.shared.db.tenant import bind_tenant
 
 security_scheme = HTTPBearer()
 ModelT = TypeVar("ModelT", bound=Base)
@@ -17,6 +18,7 @@ RepoT = TypeVar("RepoT", bound=BaseTenantRepository)
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -39,6 +41,8 @@ async def get_current_user(
     if user.is_locked():
         raise AuthenticationError("Account is locked.")
 
+    await bind_tenant(db, user.id)
+    request.state.user_id = str(user.id)
     return user
 
 

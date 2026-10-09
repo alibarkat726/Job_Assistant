@@ -1,4 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from sqlalchemy import text
+from app.shared.db.session import engine
+from app.shared.middleware.request_id import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from app.config.settings import settings
@@ -14,8 +18,28 @@ from app.tailoring.routes import router as tailoring_router
 from app.interview_prep.routes import router as interview_prep_router
 from app.dashboard.routes import router as dashboard_router
 from app.cover_letters.routes import router as cover_letter_router
+from app.rag.routes import router as rag_router
+
+
+@asynccontextmanager
+async def lifespan(application):
+    if settings.ENVIRONMENT == "production":
+        # Refuse to serve with a bypass role or incomplete rollout, even if the
+        # deployment forgot to configure readiness routing.
+        await readiness_check()
+    try:
+        yield
+    finally:
+        from app.rag.embedding import embedding_service
+        from app.rag.quota import quota_client
+        if "client" in embedding_service.__dict__:
+            await embedding_service.client.close()
+        if quota_client.cache_info().currsize:
+            await quota_client().aclose()
+        await engine.dispose()
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.APP_NAME,
     description="Job-Finder AI Agent Platform - Auth & Multi-Tenant Foundation",
     version="1.0.0",
@@ -29,6 +53,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # 1. Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIDMiddleware)
 
 # 2. CORS Middleware (Explicit origins configuration)
 app.add_middleware(
@@ -52,9 +77,35 @@ app.include_router(tailoring_router)
 app.include_router(interview_prep_router)
 app.include_router(dashboard_router)
 app.include_router(cover_letter_router)
+app.include_router(rag_router)
 
 
 @app.get("/health", tags=["System"])
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "environment": settings.ENVIRONMENT}
+
+
+@app.get("/ready", tags=["System"])
+async def readiness_check():
+    try:
+        async with engine.connect() as conn:
+            role = (await conn.execute(text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"))).one()
+            if settings.ENVIRONMENT == "production" and any(role):
+                raise RuntimeError("Unsafe database role")
+            if settings.ENVIRONMENT == "production" and await conn.scalar(text("""
+                SELECT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                WHERE n.nspname='public' AND c.relrowsecurity AND has_table_privilege(c.oid, 'TRUNCATE'))
+            """)):
+                raise RuntimeError("Runtime role has tenant-table TRUNCATE privileges")
+            version = await conn.scalar(text("SELECT version_num FROM alembic_version"))
+            if version != "010_rag_production":
+                raise RuntimeError("Migration required")
+            if not await conn.scalar(text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")):
+                raise RuntimeError("Vector extension required")
+            if settings.ENVIRONMENT == "production":
+                from app.rag.quota import quota_client
+                await quota_client().ping()
+        return {"status": "ready"}
+    except Exception:
+        raise HTTPException(503, "Service dependencies are not ready.") from None

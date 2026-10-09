@@ -10,6 +10,7 @@ from app.config.settings import settings
 from app.shared.db.base import Base
 import app.users.models  # noqa: F401
 import app.core_schema.models  # noqa: F401
+import app.rag.models  # noqa: F401
 
 config = context.config
 

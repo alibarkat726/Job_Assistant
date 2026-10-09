@@ -1,4 +1,6 @@
 import bleach
+import io
+import zipfile
 from app.config.settings import settings
 from app.shared.middleware.error_handler import AppException
 
@@ -35,9 +37,20 @@ def sniff_mime_type(file_bytes: bytes, declared_filename: str) -> str:
 
     # 2. DOCX Check (PK\x03\x04 zip header containing Word structures)
     if file_bytes.startswith(b"PK\x03\x04"):
-        # Double check zip content or word extension hint
-        if b"word/" in file_bytes[:4096] or declared_filename.lower().endswith(".docx"):
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
+                entries = archive.infolist()
+                names = {entry.filename for entry in entries}
+                expanded = sum(entry.file_size for entry in entries)
+                if len(entries) > 2000 or expanded > settings.MAX_DOCX_EXPANDED_BYTES:
+                    raise AppException("DOCX expanded size exceeds allowed limits.", code="FILE_TOO_LARGE", status_code=400)
+                if any(entry.flag_bits & 1 for entry in entries):
+                    raise AppException("Encrypted DOCX files are unsupported.", code="INVALID_FILE", status_code=400)
+                if "[Content_Types].xml" in names and "word/document.xml" in names:
+                    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        except zipfile.BadZipFile:
+            pass
+        raise AppException("Invalid DOCX archive.", code="INVALID_FILE", status_code=400)
 
     # 3. Plain Text Check (Valid UTF-8 string)
     try:

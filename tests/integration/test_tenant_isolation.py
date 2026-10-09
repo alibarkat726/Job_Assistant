@@ -17,7 +17,6 @@ async def test_tenant_isolation_at_repository_layer(
     user_b_id = test_user_b["user"].id
 
     repo_a = BaseTenantRepository(Project, db_session, tenant_id=user_a_id)
-    repo_b = BaseTenantRepository(Project, db_session, tenant_id=user_b_id)
 
     # 1. User A creates a project
     project_a = Project(title="User A's Secret AI Agent Architecture")
@@ -27,22 +26,24 @@ async def test_tenant_isolation_at_repository_layer(
     assert created_a.id is not None
     assert created_a.user_id == user_a_id
 
-    # 2. User B tries to fetch User A's project by ID -> Must return None!
-    project_b_view = await repo_b.get_by_id(created_a.id)
-    assert project_b_view is None
+    async with AsyncSession(db_session.bind, expire_on_commit=False) as session_b:
+        repo_b = BaseTenantRepository(Project, session_b, tenant_id=user_b_id)
+        # 2. User B tries to fetch User A's project by ID -> Must return None!
+        project_b_view = await repo_b.get_by_id(created_a.id)
+        assert project_b_view is None
 
-    # 3. User B tries to list all projects -> Must return 0 items!
-    all_b_projects = await repo_b.find_all()
-    assert len(all_b_projects) == 0
+        # 3. User B tries to list all projects -> Must return 0 items!
+        all_b_projects = await repo_b.find_all()
+        assert len(all_b_projects) == 0
 
-    # 4. User A lists projects -> Must return 1 item
-    all_a_projects = await repo_a.find_all()
-    assert len(all_a_projects) == 1
-    assert all_a_projects[0].id == created_a.id
+        # 4. User A lists projects -> Must return 1 item
+        all_a_projects = await repo_a.find_all()
+        assert len(all_a_projects) == 1
+        assert all_a_projects[0].id == created_a.id
 
-    # 5. User B attempts to delete User A's record -> Must raise PermissionError
-    with pytest.raises(PermissionError):
-        await repo_b.delete(created_a)
+        # 5. User B attempts to delete User A's record -> Must raise PermissionError
+        with pytest.raises(PermissionError):
+            await repo_b.delete(created_a)
 
 
 @pytest.mark.asyncio

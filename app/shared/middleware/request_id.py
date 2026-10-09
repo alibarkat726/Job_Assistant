@@ -1,0 +1,11 @@
+import uuid
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # Generate locally; arbitrary caller headers are not trusted identifiers.
+        request.state.request_id = str(uuid.uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        return response

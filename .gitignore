@@ -8,3 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Credentials and user uploads are runtime data, never source code.
+.env
+.env.*
+!.env.example
+storage/
+.idea/
+.pytest_cache/

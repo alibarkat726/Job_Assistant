@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional
+import logging
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -116,13 +117,15 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         # Log unhandled exceptions in production, return sanitized message
+        request_id = getattr(request.state, "request_id", None)
+        logging.getLogger(__name__).error("request_failed request_id=%s error_type=%s", request_id, type(exc).__name__)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": {
                     "code": "INTERNAL_SERVER_ERROR",
                     "message": "An unexpected error occurred. Please try again later.",
-                    "details": None,
+                    "details": {"request_id": request_id},
                 }
             },
         )

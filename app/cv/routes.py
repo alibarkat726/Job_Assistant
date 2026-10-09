@@ -14,6 +14,8 @@ from app.shared.middleware.rate_limiter import limiter
 from app.users.models import User
 from app.auth.dependencies import get_current_user
 from app.cv.repository import CVRepository
+from app.config.settings import settings
+from app.cv.security import validate_file_size
 from app.cv.services import CVIntakeService
 from app.cv.schemas import (
     CVResponse,
@@ -45,7 +47,8 @@ async def upload_cv(
     Upload raw CV file (PDF, DOCX, or plain text).
     Sniffs format, extracts text, runs Intake Agent, and saves unfinalized draft for user review.
     """
-    contents = await file.read()
+    contents = await file.read(settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024 + 1)
+    validate_file_size(contents)
     filename = file.filename or "cv_upload"
     return await cv_service.upload_and_parse_cv(
         user_id=current_user.id,

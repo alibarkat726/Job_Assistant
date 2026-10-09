@@ -33,14 +33,17 @@ class LocalStorageService(FileStorageService):
 
     def __init__(self, base_dir: str = settings.STORAGE_DIR):
         self.base_dir = Path(base_dir).resolve()
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def _get_user_dir(self, user_id: uuid.UUID) -> Path:
-        user_dir = (self.base_dir / str(user_id)).resolve()
+        candidate = self.base_dir / str(user_id)
+        if candidate.is_symlink():
+            raise PermissionError("Access denied: User storage directory is a symbolic link.")
+        user_dir = candidate.resolve()
         # Security check: Ensure user_dir is strictly contained within base_dir
-        if not str(user_dir).startswith(str(self.base_dir)):
+        if not user_dir.is_relative_to(self.base_dir):
             raise PermissionError("Access denied: Directory traversal attempt detected.")
-        user_dir.mkdir(parents=True, exist_ok=True)
+        user_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         return user_dir
 
     async def save_file(self, user_id: uuid.UUID, file_bytes: bytes, original_filename: str) -> str:
@@ -50,10 +53,10 @@ class LocalStorageService(FileStorageService):
         file_key = f"{file_uuid}{ext}" if ext else file_uuid
 
         target_path = (user_dir / file_key).resolve()
-        if not str(target_path).startswith(str(user_dir)):
+        if not target_path.is_relative_to(user_dir):
             raise PermissionError("Access denied: Invalid filename.")
 
-        with open(target_path, "wb") as f:
+        with open(target_path, "xb") as f:
             f.write(file_bytes)
 
         return file_key
@@ -62,7 +65,7 @@ class LocalStorageService(FileStorageService):
         user_dir = self._get_user_dir(user_id)
         target_path = (user_dir / Path(file_key).name).resolve()
 
-        if not str(target_path).startswith(str(user_dir)) or not target_path.is_file():
+        if not target_path.is_relative_to(user_dir) or not target_path.is_file():
             raise FileNotFoundError("Requested file does not exist or access is restricted.")
 
         with open(target_path, "rb") as f:
@@ -72,5 +75,5 @@ class LocalStorageService(FileStorageService):
         user_dir = self._get_user_dir(user_id)
         target_path = (user_dir / Path(file_key).name).resolve()
 
-        if str(target_path).startswith(str(user_dir)) and target_path.is_file():
+        if target_path.is_relative_to(user_dir) and target_path.is_file():
             os.remove(target_path)
